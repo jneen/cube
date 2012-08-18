@@ -203,24 +203,25 @@ module Data.Cube (
                   , c [bottomFace, face, rightFace]
                   ]
 
-  printFace :: Face -> Face -> Cube -> IO ()
-  printFace face top = mapM_ printLine . faceColors face top
-    where printLine line = printSwatches line >> putChar '\n'
-
-
   -- TODO: print the cube in the sideways-cross.
   printCube :: Cube -> IO ()
   printCube cube = do
-    printBlock $ faceColors U B cube
-    printBlock $ concatColors $ [ faceColors F U cube
-                                , faceColors R U cube
-                                , faceColors B U cube
-                                , faceColors L U cube
-                                ]
-    printBlock $ faceColors D F cube
+    printBlock 2 $ faceColors U B cube
+    printBlock 0 $ concatColors $ [ faceColors B U cube
+                                  , faceColors L U cube
+                                  , faceColors F U cube
+                                  , faceColors R U cube
+                                  ]
+    printBlock 2 $ faceColors D F cube
 
     where
-      printBlock = mapM_ (\line -> printSwatches line >> putChar '\n')
+      printBlock indent = mapM_ printLine
+        where
+          printLine line = do
+            putStr $ replicate (6*indent) ' '
+            printSwatches line
+            putChar '\n'
+
       concatColors = foldl1 (zipWith (++))
 
   printCubie :: Cubie -> IO ()
