@@ -1,0 +1,13 @@
+Name:                cube
+Version:             0.0
+Build-Type:          Simple
+Description:         A Rubik's Cube emulator
+License:             MIT
+License-file:        LICENSE
+Author:              Jay Adkisson
+Maintainer:          jjmadkisson@gmail.com
+Cabal-Version:       >=1.2
+
+Library
+  Exposed-Modules:   Data.Cube
+  Build-Depends:     base, parsec
