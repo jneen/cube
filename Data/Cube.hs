@@ -252,7 +252,7 @@ module Data.Cube (
     Forward f   -> turnForward f
     Double f    -> turnForward f . turnForward f
     Reverse f   -> turnForward f . turnForward f . turnForward f
-    Multi t1 t2 -> applyTurn t1 . applyTurn t2
+    Multi t1 t2 -> applyTurn t2 . applyTurn t1
 
   applyTurns :: [Turn] -> Cube -> Cube
   applyTurns = applyTurn . mconcat
