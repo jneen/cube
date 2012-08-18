@@ -23,6 +23,21 @@ module Data.Cube (
   -- cubies
     Sticker(Sticker),
     Cubie(Edge, Corner),
+
+  -- cube
+    Cube(Cube),
+    printCube,
+
+  -- turns
+    Turn(NullTurn, Forward, Reverse, Double, Multi),
+    readTurn,
+    showTurn,
+    applyTurn,
+
+  -- algs
+    sexy,
+    tperm,
+    sune
   ) where
 
   import Data.Monoid
