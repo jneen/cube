@@ -310,3 +310,6 @@ module Data.Cube (
 
   sexy = readTurn "RUR'U'"
   tperm = sexy +++ readTurn "R'FR2U'R'U'RUR'F'"
+  sune = readTurn "RUR'URU2R'"
+
+  -- TODO: rotations, thick turns, etc.
