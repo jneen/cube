@@ -20,6 +20,11 @@ module Data.Cube (
     rotateFace,
     initColor,
 
+  -- orientations
+    Orientation(Orientation),
+    faceOn,
+    rotateOrientation,
+
   -- cubies
     Sticker(Sticker),
     Cubie(Edge, Corner),
@@ -117,6 +122,22 @@ module Data.Cube (
     | direction == oppositeFace face    = face
     | otherwise                         = head $ nextFaceRing direction face
 
+  {- ORIENTATIONS -}
+  data Orientation = Orientation { topFace :: Face, frontFace :: Face }
+    deriving(Show, Eq)
+
+  faceOn :: Face -> Orientation -> Face
+  faceOn U o = topFace o
+  faceOn D o = oppositeFace $ topFace o
+  faceOn L o = rotateFace (topFace o) $ frontFace o
+  faceOn R o = rotateFace (topFace o) $ oppositeFace $ frontFace o
+  faceOn F o = frontFace o
+  faceOn B o = oppositeFace $ frontFace o
+
+  rotateOrientation :: Face -> Orientation -> Orientation
+  rotateOrientation face (Orientation t f) = Orientation (rotate t) (rotate f)
+    where rotate = rotateFace (oppositeFace face)
+
   {- CUBIES -}
 
   data Sticker = Sticker { stickerFace :: Face, stickerColor :: Color }
@@ -160,12 +181,19 @@ module Data.Cube (
     where same xs ys = sort xs == sort ys
 
   {- CUBE -}
-  data Cube = Cube [Cubie]
+  data Cube = Cube [Cubie] Orientation
     deriving(Show, Eq)
 
-  initCube :: Cube
-  initCube = Cube (initEdges ++ initCorners)
+  rotateCube :: Face -> Cube -> Cube
+  rotateCube face (Cube cubies orientation) = Cube newCubies newOrientation
     where
+      newCubies = map (rotateCubie face) cubies
+      newOrientation = rotateOrientation face orientation
+
+  initCube :: Cube
+  initCube = Cube (initEdges ++ initCorners) initOrientation
+    where
+      initOrientation = Orientation U F
       -- for the edges, we take the edges around the three rings
       -- to get all twelve
       initEdges = do
@@ -186,7 +214,10 @@ module Data.Cube (
       initSticker f = Sticker f (initColor f)
 
   cubieByFaces :: [Face] -> Cube -> Cubie
-  cubieByFaces faces (Cube cubies) = head $ filter (onExactFaces faces) cubies
+  cubieByFaces faces (Cube cubies _) = head $ filter (onExactFaces faces) cubies
+
+  middleColorOnFace :: Face -> Cube -> Color
+  middleColorOnFace f (Cube _ orientation) = initColor (faceOn f orientation)
 
   faceColors :: Face -> Face -> Cube -> [[Color]]
   faceColors face topFace cube = [topRow, middleRow, bottomRow]
@@ -203,7 +234,7 @@ module Data.Cube (
                ]
 
       middleRow = [ c [face, leftFace]
-                  , initColor face -- middle sticker
+                  , middleColorOnFace face cube
                   , c [face, rightFace]
                   ]
 
@@ -241,8 +272,8 @@ module Data.Cube (
             | Multi Turn Turn
 
   turnForward :: Face -> Cube -> Cube
-  turnForward f (Cube cubies) =
-    Cube (map turnCubie cubies) where
+  turnForward f (Cube cubies o) =
+    Cube (map turnCubie cubies) o where
       turnCubie :: Cubie -> Cubie
       turnCubie cubie
         | onFace f cubie = rotateCubie f cubie
