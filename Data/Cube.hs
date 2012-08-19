@@ -155,12 +155,9 @@ module Data.Cube (
   onFace :: Face -> Cubie -> Bool
   onFace face cubie = face `elem` cubieFaces cubie
 
-  onFaces :: [Face] -> Cubie -> Bool
-  onFaces faces cubie = all (\f -> onFace f cubie) faces
-
   onExactFaces :: [Face] -> Cubie -> Bool
   onExactFaces faces cubie = faces `same` map stickerFace (stickers cubie)
-    where same l1 l2 = sort l1 == sort l2
+    where same xs ys = sort xs == sort ys
 
   {- CUBE -}
   data Cube = Cube [Cubie]
@@ -187,9 +184,6 @@ module Data.Cube (
 
       initSticker :: Face -> Sticker
       initSticker f = Sticker f (initColor f)
-
-  cubiesOnFaces :: [Face] -> Cube -> [Cubie]
-  cubiesOnFaces faces (Cube cubies) = filter (onFaces faces) cubies
 
   cubieByFaces :: [Face] -> Cube -> Cubie
   cubieByFaces faces (Cube cubies) = head $ filter (onExactFaces faces) cubies
@@ -238,14 +232,6 @@ module Data.Cube (
             putChar '\n'
 
       concatColors = foldl1 (zipWith (++))
-
-  printCubie :: Cubie -> IO ()
-  printCubie cubie = do
-    let st = stickers cubie
-    let location = concat $ map (show . stickerFace) st
-    putStr $ location ++ ": "
-    printSwatches $ map stickerColor st
-    putChar '\n'
 
   {- TURNS -}
   data Turn = NullTurn
