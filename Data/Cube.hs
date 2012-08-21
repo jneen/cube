@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 module Data.Cube (
   -- colors
     Color(
@@ -43,12 +44,13 @@ module Data.Cube (
 
   import Prelude hiding(id, (.))
   import Control.Category
-  import Data.List (intersperse, (\\), sort, inits, tails, minimumBy)
+  import Data.List (intersperse, sort, elemIndex, foldl')
   -- import qualified Text.ParserCombinators.Parsec as Parsec
   import Text.ParserCombinators.Parsec
   import Data.Char (toUpper, toLower)
   import qualified Data.Map as Map
   import Data.Map (Map)
+  import Data.Array.Unboxed
 
   {- UTILS -}
   forceMaybe :: Maybe a -> a
@@ -76,6 +78,9 @@ module Data.Cube (
 
     gconcat :: [a] -> a
     gconcat = foldl (|*|) identity
+
+    gconcat' :: [a] -> a
+    gconcat' = foldl' (|*|) identity
 
   {- COLORS -}
   data Color = White | Yellow | Red | Orange | Green | Blue
@@ -214,8 +219,12 @@ module Data.Cube (
 
   invertOrientation :: Orientation -> Orientation
   invertOrientation o
-    | o |*| o == identity = o
-    | otherwise = o |*| o
+    | o2 == identity = o
+    | o3 == identity = o2
+    | otherwise = o3
+      where
+        o2 = o |*| o
+        o3 = o2 |*| o
 
   initOrientation = Orientation U F
 
@@ -225,40 +234,50 @@ module Data.Cube (
     inverse = invertOrientation
 
   {- PERMUTATIONS -}
-  data Permutation a = Permutation [(a, a)] deriving(Show, Eq)
+  data Permutation a = Permutation (Array Int Int) deriving(Show, Eq)
   -- TODO: make Eq more general
 
-  composePerm :: (Eq a) => Permutation a -> Permutation a -> Permutation a
-  composePerm (Permutation p1) (Permutation p2) = Permutation $ do
-    (start, middle) <- p2
-    case lookup middle p1 of
-         Nothing -> []
-         Just end -> return (start, end)
+  mapArrayAssocs :: (Ix i) => ((i, a) -> (i, a)) -> Array i a -> Array i a
+  mapArrayAssocs f arr = array (bounds arr) (map f $ assocs arr)
 
-  runPerm :: (Eq a) => a -> Permutation a -> a
-  runPerm el (Permutation list) = case lookup el list of
-                                       Just r -> r
-                                       Nothing -> el
+  arrayFromList :: [a] -> Array Int a
+  arrayFromList l = array (0, length l - 1) (zip [0..] l)
+
+  composePerm :: (Eq a, Permutable a) =>
+    Permutation a -> Permutation a -> Permutation a
+  composePerm (Permutation p1) (Permutation p2) = Permutation p3
+    where
+      p3 = fmap (p1 !) p2
 
   inversePerm :: Permutation a -> Permutation a
-  inversePerm (Permutation list) = Permutation (map invert list)
+  inversePerm (Permutation arr) = Permutation (mapArrayAssocs invert arr)
     where invert (x, y) = (y, x)
 
-  class Permutable a where
-    permutationSet :: [a]
+  runPerm :: (Eq a, Permutable a) => a -> Permutation a -> a
+  runPerm el (Permutation arr) = permutationArray ! (arr ! idx)
+    where
+      idx = (permutationIndex el)
+
+  class (Eq a) => Permutable a where
+    permutationList :: [a]
+    permutationArray :: Array Int a
+    permutationArray = arrayFromList permutationList
+
+    permutationIndex :: a -> Int
+    permutationIndex = forceMaybe . flip elemIndex permutationList
+
     makePermutation :: (a -> a) -> Permutation a
-    makePermutation f = Permutation $ map (\x -> (x, f x)) permutationSet
+    makePermutation f = Permutation $ arrayFromList $ permutedList
+      where
+        permutedList = map (permutationIndex . f) permutationList
 
   instance (Eq a, Permutable a) => Group (Permutation a) where
-    identity = Permutation $ map (\x -> (x, x)) permutationSet
+    identity = makePermutation id
     inverse = inversePerm
     (|*|) = composePerm
 
-  instance Permutable Cubie where
-    permutationSet = undefined
-
   instance Permutable Facet where
-    permutationSet = do
+    permutationList = do
       cubie <- allEdges ++ allCorners
       face <- getFaces cubie
       return $ Facet (cubie, face)
@@ -295,7 +314,7 @@ module Data.Cube (
 
   invertCube :: Cube -> Cube
   invertCube (Cube orientation permutation) =
-    Cube orientation (inverse permutation)
+    Cube (inverse orientation) (inverse permutation)
 
   initCube = Cube identity identity
 
@@ -404,7 +423,7 @@ module Data.Cube (
     applyDirection dir $ applyOperation op face
 
   applyMoves :: [Move] -> Cube
-  applyMoves moves = foldl (|*|) identity $ map applyMove moves
+  applyMoves moves = gconcat' $ map applyMove moves
 
   rotateMove :: Face -> Move -> Move
   rotateMove face (Move op dir moveFace) =
@@ -560,7 +579,7 @@ module Data.Cube (
   hperm = half |*| (readAlg "U2") |*| half
     where half = conjugate (readAlg "R2U2") (readAlg "R")
 
-  jperm = readAlg "RU2R'U' RU2L'U R'U'L"
+  jperm = readAlg $! "RU2R'U' RU2L'U R'U'L"
   aperm = conjugate (readAlg "x R2") (commutator (readAlg "RUR'") (readAlg "D2"))
 
   gperm = readAlg "RUR' y' R2u'RU'R'UR'u R2 y"

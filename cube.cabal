@@ -10,4 +10,4 @@ Cabal-Version:       >=1.2
 
 Library
   Exposed-Modules:   Data.Cube
-  Build-Depends:     base, parsec
+  Build-Depends:     base, parsec, containers
