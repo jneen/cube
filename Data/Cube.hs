@@ -25,13 +25,9 @@ module Data.Cube (
     faceOn,
     rotateOrientation,
 
-  -- cubies
-    Sticker(Sticker),
-    Cubie(Edge, Corner),
-
   -- cube
     Cube(Cube),
-    printCube,
+    -- printCube,
 
   -- turns
   --  Turn(NullTurn, Forward, Reverse, Double, Multi),
@@ -45,11 +41,41 @@ module Data.Cube (
   --  sune
   ) where
 
-  import Data.Monoid
-  import Data.List (intersperse, (\\), sort)
+  import Prelude hiding(id, (.))
+  import Control.Category
+  import Data.List (intersperse, (\\), sort, inits, tails, minimumBy)
   -- import qualified Text.ParserCombinators.Parsec as Parsec
   import Text.ParserCombinators.Parsec
   import Data.Char (toUpper, toLower)
+  import qualified Data.Map as Map
+  import Data.Map (Map)
+
+  {- UTILS -}
+  forceMaybe :: Maybe a -> a
+  forceMaybe (Just x) = x
+  forceMaybe Nothing = error "forced maybe!"
+
+  {- GROUPS -}
+  class Group a where
+    infixl 7 |*|
+    (|*|)    :: a -> a -> a
+    inverse  :: a -> a
+    identity :: a
+
+    compound :: Int -> a -> a
+    compound 0 _ = identity
+    compound n x = x |*| compound (n-1) x
+
+    -- returns the conjugate (xyx')
+    conjugate :: a -> a -> a
+    conjugate x y = x |*| y |*| inverse x
+
+    -- returns the commutator (xyx'y')
+    commutator :: a -> a -> a
+    commutator x y = x |*| y |*| inverse x |*| inverse y
+
+    gconcat :: [a] -> a
+    gconcat = foldl (|*|) identity
 
   {- COLORS -}
   data Color = White | Yellow | Red | Orange | Green | Blue
@@ -129,6 +155,43 @@ module Data.Cube (
     | mirror == oppositeFace face = oppositeFace face
     | otherwise                   = face
 
+  {- CUBIES -}
+  data Cubie = Edge (Face, Face) | Corner (Face, Face, Face)
+               deriving(Show)
+
+  getFaces :: Cubie -> [Face]
+  getFaces (Edge (x, y)) = [x, y]
+  getFaces (Corner (x, y, z)) = [x, y, z]
+
+  fromFaces :: [Face] -> Cubie
+  fromFaces (x:y:[]) = Edge (x, y)
+  fromFaces (x:y:z:[]) = Corner (x, y, z)
+  fromFaces _ = error "a cubie has two or three faces!"
+
+  mapCubieFaces :: (Face -> Face) -> Cubie -> Cubie
+  mapCubieFaces f = fromFaces . map f . getFaces
+
+  rotateCubie :: Face -> Cubie -> Cubie
+  rotateCubie = mapCubieFaces . rotateFace
+
+  instance Eq Cubie where
+    (==) c1 c2 = f c1 == f c2
+                 where f = sort . getFaces
+
+  {- FACETS -}
+  newtype Facet = Facet (Cubie, Face) deriving (Eq, Show)
+  getFacetFace (Facet (_, f)) = f
+  getFacetCubie (Facet (c, _)) = c
+
+  onFace :: Face -> Facet -> Bool
+  onFace f (Facet (c, _)) = f `elem` getFaces c
+
+  rotateFacet :: Face -> Facet -> Facet
+  rotateFacet r (Facet (c, f)) = Facet (rotateCubie r c, rotateFace r f)
+
+  mapFacetFaces :: (Face -> Face) -> Facet -> Facet
+  mapFacetFaces fn (Facet (c, f)) = Facet (mapCubieFaces fn c, fn f)
+
   {- ORIENTATIONS -}
   data Orientation = Orientation { topFace :: Face, frontFace :: Face }
     deriving(Show, Eq)
@@ -145,125 +208,151 @@ module Data.Cube (
   rotateOrientation face o@(Orientation t f) = Orientation (rotate t) (rotate f)
     where rotate = rotateFace $ faceOn (oppositeFace face) o
 
-  {- CUBIES -}
+  orientOrientation :: Orientation -> Orientation -> Orientation
+  orientOrientation o1 o2 =
+    Orientation (faceOn (topFace o1) o2) (faceOn (frontFace o1) o2)
 
-  data Sticker = Sticker { stickerFace :: Face, stickerColor :: Color }
-                 deriving(Show, Eq)
-  data Cubie = Edge (Sticker, Sticker) | Corner (Sticker, Sticker, Sticker)
-               deriving(Show, Eq)
+  invertOrientation :: Orientation -> Orientation
+  invertOrientation o
+    | o |*| o == identity = o
+    | otherwise = o |*| o
 
-  fromStickers :: [Sticker] -> Cubie
-  fromStickers [s1, s2] = Edge (s1, s2)
-  fromStickers [s1, s2, s3] = Corner (s1, s2, s3)
-  fromStickers _ = undefined
+  initOrientation = Orientation U F
 
-  stickers :: Cubie -> [Sticker]
-  stickers cubie = case cubie of
-    Edge (s1, s2) -> [s1, s2]
-    Corner (s1, s2, s3) -> [s1, s2, s3]
+  instance Group Orientation where
+    identity = initOrientation
+    (|*|) = orientOrientation
+    inverse = invertOrientation
 
-  cubieFaces :: Cubie -> [Face]
-  cubieFaces = map stickerFace . stickers
+  {- PERMUTATIONS -}
+  data Permutation a = Permutation [(a, a)] deriving(Show, Eq)
+  -- TODO: make Eq more general
 
-  mapStickers :: (Sticker -> Sticker) -> Cubie -> Cubie
-  mapStickers f = fromStickers . map f . stickers
+  composePerm :: (Eq a) => Permutation a -> Permutation a -> Permutation a
+  composePerm (Permutation p1) (Permutation p2) = Permutation $ do
+    (start, middle) <- p2
+    case lookup middle p1 of
+         Nothing -> []
+         Just end -> return (start, end)
 
-  mapCubieFaces :: (Face -> Face) -> Cubie -> Cubie
-  mapCubieFaces f = mapStickers faceMap
-    where faceMap (Sticker face color) = Sticker (f face) color
+  runPerm :: (Eq a) => a -> Permutation a -> a
+  runPerm el (Permutation list) = case lookup el list of
+                                       Just r -> r
+                                       Nothing -> el
 
-  rotateCubie :: Face -> Cubie -> Cubie
-  rotateCubie f = mapCubieFaces (rotateFace f)
+  inversePerm :: Permutation a -> Permutation a
+  inversePerm (Permutation list) = Permutation (map invert list)
+    where invert (x, y) = (y, x)
 
-  colorOnFace :: Face -> Cubie -> Color
-  colorOnFace f = stickerColor . stickerByFace f
-    where
-      stickerByFace f = head . filter (\s -> stickerFace s == f) . stickers
+  class Permutable a where
+    permutationSet :: [a]
+    makePermutation :: (a -> a) -> Permutation a
+    makePermutation f = Permutation $ map (\x -> (x, f x)) permutationSet
 
-  onFace :: Face -> Cubie -> Bool
-  onFace face cubie = face `elem` cubieFaces cubie
+  instance (Eq a, Permutable a) => Group (Permutation a) where
+    identity = Permutation $ map (\x -> (x, x)) permutationSet
+    inverse = inversePerm
+    (|*|) = composePerm
 
-  onExactFaces :: [Face] -> Cubie -> Bool
-  onExactFaces faces cubie = faces `same` map stickerFace (stickers cubie)
-    where same xs ys = sort xs == sort ys
+  instance Permutable Cubie where
+    permutationSet = undefined
+
+  instance Permutable Facet where
+    permutationSet = do
+      cubie <- allEdges ++ allCorners
+      face <- getFaces cubie
+      return $ Facet (cubie, face)
+      where
+        allEdges = do
+          rotatingFace <- [U, R, F]
+          s1 <- faceRing rotatingFace
+          let s2 = rotateFace rotatingFace s1
+          return $ Edge (s1, s2)
+
+        allCorners = do
+          ud <- [U, D]
+          side1 <- faceRing ud
+          let side2 = rotateFace ud side1
+          return $ Corner (side1, side2, ud)
+
+  makeOrientationPerm :: Orientation -> Permutation Facet
+  makeOrientationPerm = makePermutation . mapFacetFaces . flip faceOn
 
   {- CUBE -}
-  data Cube = Cube [Cubie] Orientation
+  data Cube = Cube { getOrientation :: Orientation
+                   , getPermutation :: Permutation Facet
+                   }
     deriving(Show, Eq)
 
-  rotateCube :: Face -> Cube -> Cube
-  rotateCube face (Cube cubies orientation) = Cube newCubies newOrientation
+  combineCubes :: Cube -> Cube -> Cube
+  combineCubes (Cube o1 p1) (Cube o2 p2) = Cube o3 p3
     where
-      newCubies = map (rotateCubie face) cubies
-      newOrientation = rotateOrientation face orientation
+      o3 = o1 |*| o2
+      -- permutations are multiplied in compositional order,
+      -- but cubes are in pipelining order, which is reversed.
+      p3 = reorient o1 p2 |*| p1
+      reorient = conjugate . makeOrientationPerm
 
-  getOrientation :: Cube -> Orientation
-  getOrientation (Cube _ o) = o
+  invertCube :: Cube -> Cube
+  invertCube (Cube orientation permutation) =
+    Cube orientation (inverse permutation)
 
-  initCube :: Cube
-  initCube = Cube (initEdges ++ initCorners) initOrientation
+  initCube = Cube identity identity
+
+  instance Group Cube where
+    identity = initCube
+    inverse = invertCube
+    (|*|) = combineCubes
+
+  makeTurn :: Face -> Cube
+  makeTurn f = Cube identity (makePermutation turn)
     where
-      initOrientation = Orientation U F
-      -- for the edges, we take the edges around the three rings
-      -- to get all twelve
-      initEdges = do
-        rotatingFace <- [U, R, F]
-        s1 <- faceRing rotatingFace
-        let s2 = rotateFace rotatingFace s1
-        return $ Edge (initSticker s1, initSticker s2)
+      turn facet
+        | onFace f facet = rotateFacet f facet
+        | otherwise      = facet
 
-      -- for corners, we take the rings round the top and bottom
-      -- to get all eight
-      initCorners = do
-        ud <- [U, D]
-        side1 <- faceRing ud
-        let side2 = rotateFace ud side1
-        return $ Corner (initSticker side1, initSticker side2, initSticker ud)
+  makeRotation :: Face -> Cube
+  makeRotation f = Cube (rotateOrientation f identity) identity
 
-      initSticker :: Face -> Sticker
-      initSticker f = Sticker f (initColor f)
-
-  cubieByFaces :: [Face] -> Cube -> Cubie
-  cubieByFaces faces (Cube cubies _) = head $ filter (onExactFaces faces) cubies
-
-  middleColorOnFace :: Face -> Cube -> Color
-  middleColorOnFace f (Cube _ orientation) = initColor (faceOn f orientation)
-
-  faceColors :: Face -> Face -> Cube -> [[Color]]
-  faceColors face topFace cube = [topRow, middleRow, bottomRow]
+  colorAt :: Facet -> Cube -> Color
+  colorAt facet cube = initColor face
     where
-      rightFace = rotateFace face topFace
-      bottomFace = rotateFace face rightFace
-      leftFace = rotateFace face bottomFace
+      face = getFacetFace $ runPerm facet $ inverse $ getPermutation cube
 
-      c :: [Face] -> Color
-      c faces = colorOnFace face $ cubieByFaces faces cube
-      topRow = [ c [topFace, face, leftFace]
-               , c [topFace, face]
-               , c [topFace, face, rightFace]
+  faceColors :: Orientation -> Cube -> [[Color]]
+  faceColors or cube = [topRow, middleRow, bottomRow]
+    where
+      orientation = or |*| getOrientation cube
+      shownFace = topFace orientation
+
+      -- helpers for building the color lists
+      f face = faceOn face orientation
+      c pos = colorAt (Facet (pos, topFace orientation)) cube
+
+      topRow = [ c (Corner (f B, shownFace, f L))
+               , c (Edge (f B, shownFace))
+               , c (Corner (f B, shownFace, f R))
                ]
 
-      middleRow = [ c [face, leftFace]
-                  , middleColorOnFace face cube
-                  , c [face, rightFace]
+      middleRow = [ c (Edge (shownFace, f L))
+                  , initColor shownFace
+                  , c (Edge (shownFace, f R))
                   ]
 
-      bottomRow = [ c [bottomFace, face, leftFace]
-                  , c [bottomFace, face]
-                  , c [bottomFace, face, rightFace]
+      bottomRow = [ c (Corner (f F, shownFace, f L))
+                  , c (Edge (f F, shownFace))
+                  , c (Corner (f F, shownFace, f R))
                   ]
 
-  -- TODO: print the cube in the sideways-cross.
   printCube :: Cube -> IO ()
   printCube cube = do
-    printBlock 2 $ faceColors U B cube
-    printBlock 0 $ concatColors $ [ faceColors B U cube
-                                  , faceColors L U cube
-                                  , faceColors F U cube
-                                  , faceColors R U cube
+    printBlock 2 $ faceColors (Orientation U F) cube
+    printBlock 0 $ concatColors $ [ faceColors (Orientation B D) cube
+                                  , faceColors (Orientation L D) cube
+                                  , faceColors (Orientation F D) cube
+                                  , faceColors (Orientation R D) cube
                                   ]
-    printBlock 2 $ faceColors D F cube
-
+    printBlock 2 $ faceColors (Orientation D B) cube
     where
       printBlock indent = mapM_ printLine
         where
@@ -274,48 +363,48 @@ module Data.Cube (
 
       concatColors = foldl1 (zipWith (++))
 
-  {- TURNS -}
+  {- ALGORITHMS -}
   data Direction = Forward | Reverse | Double
   data Operation = Turn | Rotate | Thick | Middle
   data Move = Move Operation Direction Face
-  newtype Alg = Alg [Move]
+  newtype Alg = Alg ([Move], Cube)
+
+  applyAlg :: Alg -> Cube
+  applyAlg (Alg (_, cube)) = cube
+
+  algMoves :: Alg -> [Move]
+  algMoves (Alg (m, _)) = m
+
+  makeAlg :: [Move] -> Alg
+  makeAlg moves = Alg (moves, applyMoves moves)
 
   oppositeDirection :: Direction -> Direction
   oppositeDirection Double = Double
   oppositeDirection Forward = Reverse
   oppositeDirection Reverse = Forward
 
-  applyOperation :: Operation -> Face -> Cube -> Cube
+  applyOperation :: Operation -> Face -> Cube
   applyOperation op f = case op of
-    Turn   -> turnForward f
-    Rotate -> rotateCube f
+    Turn   -> makeTurn f
+    Rotate -> makeRotation f
     Thick  -> turnThick f
-    Middle -> turnThick f . turnReverse f
+    Middle -> turnThick f |*| turnReverse f
     where
-      turnReverse f = doTimes 3 (turnForward f)
-      turnThick f = rotateCube f . turnForward (oppositeFace f)
+      turnReverse f = applyDirection Reverse (makeTurn f)
+      turnThick f = makeRotation f |*| makeTurn (oppositeFace f)
 
-  turnForward :: Face -> Cube -> Cube
-  turnForward f (Cube cubies o) =
-    Cube (map turnCubie cubies) o where
-      turnCubie :: Cubie -> Cubie
-      turnCubie cubie
-        | onFace f cubie = rotateCubie f cubie
-        | otherwise      = cubie
+  applyDirection :: Direction -> Cube -> Cube
+  applyDirection dir c = case dir of
+    Forward -> c
+    Double -> compound 2 c
+    Reverse -> compound 3 c
 
-  doTimes :: Int -> (a -> a) -> (a -> a)
-  doTimes n = foldl1 (.) . replicate n
+  applyMove :: Move -> Cube
+  applyMove (Move op dir face) =
+    applyDirection dir $ applyOperation op face
 
-  applyMove :: Move -> Cube -> Cube
-  applyMove (Move op dir face) = case dir of
-    Forward -> doMove
-    Double  -> doTimes 2 doMove
-    Reverse -> doTimes 3 doMove
-    where
-      doMove = applyOperation op face
-
-  applyAlg :: Alg -> Cube -> Cube
-  applyAlg (Alg moves) cube = foldl (flip applyMove) cube moves
+  applyMoves :: [Move] -> Cube
+  applyMoves moves = foldl (|*|) identity $ map applyMove moves
 
   rotateMove :: Face -> Move -> Move
   rotateMove face (Move op dir moveFace) =
@@ -340,13 +429,18 @@ module Data.Cube (
   orientAlg = mapAlg . orientMove
 
   mapAlg :: (Move -> Move) -> Alg -> Alg
-  mapAlg f (Alg moves) = Alg (map f moves)
+  mapAlg f = makeAlg . map f . algMoves
 
   inverseMove :: Move -> Move
   inverseMove (Move op dir face) = Move op (oppositeDirection dir) face
 
-  inverse :: Alg -> Alg
-  inverse (Alg moves) = Alg $ map inverseMove $ reverse moves
+  inverseMoves :: [Move] -> [Move]
+  inverseMoves = map inverseMove . reverse
+
+  instance Group Alg where
+    identity = Alg ([], identity)
+    Alg (xs, rx) |*| Alg (ys, ry) = Alg ((xs ++ ys), rx |*| ry)
+    inverse (Alg (moves, res)) = Alg (inverseMoves moves, inverse res)
 
   showMove :: Move -> String
   showMove (Move op dir face) = case op of
@@ -384,7 +478,7 @@ module Data.Cube (
     Double  -> "2"
 
   showAlg :: Alg -> String
-  showAlg (Alg moves) = concat . intersperse " " . map showMove $ moves
+  showAlg = concat . intersperse " " . map showMove . algMoves
 
   instance Show Alg where show = ("readAlg " ++) . show . showAlg
 
@@ -393,7 +487,7 @@ module Data.Cube (
     Left _       -> undefined
     Right result -> result
     where
-      parser = fmap Alg $ many $ do
+      parser = fmap makeAlg $ many $ do
         spaces
         (op, face) <- parseLetter
         dir <- parseDirection
@@ -439,46 +533,42 @@ module Data.Cube (
                        <|> (char '2'  >> return Double)
                        <|> (return Forward)
 
-  instance Monoid Alg where
-    mempty = Alg []
-    mappend (Alg xs) (Alg ys) = Alg (xs ++ ys)
+  printResult :: Alg -> IO ()
+  printResult = printCube . applyAlg
 
-  infixr 5 +++
-  (+++) :: (Monoid a) => a -> a -> a
-  (+++) = mappend
-
-  result :: Alg -> Cube
-  result alg = applyAlg alg initCube
+  showLL :: Alg -> IO ()
+  showLL alg = printResult $ gconcat [readAlg "z2", alg, readAlg "x'"]
 
   solveCase :: Alg -> Cube
-  solveCase = result . inverse
+  solveCase = applyAlg . inverse
 
-  normalize :: Alg -> Alg -> Alg
-  normalize a b = a +++ b +++ inverse a
+  printCase :: Alg -> IO ()
+  printCase = printCube . solveCase
 
-  intertwine :: Alg -> Alg -> Alg
-  intertwine a b = normalize a b +++ inverse b
+  sexy = commutator (readAlg "R") (readAlg "U")
 
-  sexy = intertwine (readAlg "R") (readAlg "U")
-
-  startT = intertwine (readAlg "R") (readAlg "U")
-       +++ intertwine (readAlg "R'") (readAlg "F")
+  startT = commutator (readAlg "R") (readAlg "U")
+       |*| commutator (readAlg "R'") (readAlg "F")
 
   endT = readAlg "FRU'R'U' RUR'F'"
 
-  tperm = startT +++ endT
-  yperm = endT +++ startT
+  tperm = startT |*| endT
+  yperm = endT |*| startT
   uperm = readAlg "R'U R'U'  R'U' R'U  RUR2"
-
   vperm = readAlg "R'U R'd' R'F' R2U' R'U R'F RF y'"
-
   zperm = readAlg "M2U' M2U' M'U2 M2U2 M'U2"
-  hperm = half +++ (readAlg "U2") +++ half
-    where half = normalize (readAlg "R2U2") (readAlg "R")
+  hperm = half |*| (readAlg "U2") |*| half
+    where half = conjugate (readAlg "R2U2") (readAlg "R")
 
   jperm = readAlg "RU2R'U' RU2L'U R'U'L"
+  aperm = conjugate (readAlg "x R2") (commutator (readAlg "RUR'") (readAlg "D2"))
 
   gperm = readAlg "RUR' y' R2u'RU'R'UR'u R2 y"
+
+  eperm = conjugate (readAlg "x'") (
+          commutator (conjugate (readAlg "R") (readAlg "U'")) (readAlg "D")
+      |*| commutator (conjugate (readAlg "R") (readAlg "U")) (readAlg "D")
+      )
 
   sune = readAlg "RUR'U RU2R'"
 
@@ -495,7 +585,31 @@ module Data.Cube (
               ]
     _ -> [move]
 
-  normalizeAlg :: Alg -> Alg
-  normalizeAlg (Alg moves) = Alg $ do
-    move <- moves
-    normalizeMove move
+  -- normalizeAlg :: Alg -> Alg
+  -- normalizeAlg (Alg moves) = Alg normalizedMoves
+  --   where
+  --     startOrientation = Orientation U F
+  --     normalizeRotations :: Orientation -> [Move] -> [Move]
+  --     normalizeRotations _ [] = []
+  --     normalizeRotations orientation (Move op dir face:tail) = case op of
+  --       Rotate -> normalizeRotations (doRotate orientation) tail
+  --         where doRotate = applyDirection dir (rotateOrientation face)
+  --       other -> Move op dir newFace : normalizeRotations orientation tail
+  --         where newFace = faceOn face orientation
+
+  --     normalizedMoves = normalizeRotations startOrientation (moves >>= normalizeMove)
+
+  -- optimizeAlg :: Alg -> Alg
+  -- optimizeAlg = doOptimize . normalizeAlg
+  --   where
+  --     doOptimize (Alg moves) = Alg (optimizeMoves moves)
+  --     isIdentity moves = identity == applyAlg (Alg moves)
+  --     optimizeMoves [] = []
+  --     optimizeMoves all@(x:xs)
+  --       | isIdentity (xs)  = return x
+  --       | isIdentity (tail rev) = return $ head rev
+  --       | otherwise = x : optimizeMoves xs
+  --         where rev = reverse all
+
+  -- scoreAlg :: Alg -> Int
+  -- scoreAlg = length . algMoves . normalizeAlg
