@@ -41,6 +41,7 @@ module Data.Cube (
     makeAlg,
     applyAlg,
     readAlg,
+    normalizeAlg,
 
   -- algs
     sexy,
@@ -424,7 +425,7 @@ module Data.Cube (
       turnReverse f = applyDirection Reverse (makeTurn f)
       turnThick f = makeRotation f |*| makeTurn (oppositeFace f)
 
-  applyDirection :: Direction -> Cube -> Cube
+  applyDirection :: (Group a) => Direction -> a -> a
   applyDirection dir c = case dir of
     Forward -> c
     Double -> compound 2 c
@@ -472,6 +473,20 @@ module Data.Cube (
     identity = Alg ([], identity)
     Alg (xs, rx) |*| Alg (ys, ry) = Alg ((xs ++ ys), rx |*| ry)
     inverse (Alg (moves, res)) = Alg (inverseMoves moves, inverse res)
+
+  normalizeAlg :: Alg -> Alg
+  normalizeAlg (Alg (moves, result)) = Alg (normalizedMoves, result)
+    where
+      startOrientation = Orientation U F
+      normalizeRotations :: Orientation -> [Move] -> [Move]
+      normalizeRotations _ [] = []
+      normalizeRotations orientation (Move op dir face:tail) = case op of
+        Rotate -> normalizeRotations (rot |*| orientation) tail
+          where rot = applyDirection dir (rotateOrientation face identity)
+        other -> Move op dir newFace : normalizeRotations orientation tail
+          where newFace = faceOn face orientation
+
+      normalizedMoves = normalizeRotations identity (moves >>= normalizeMove)
 
   showMove :: Move -> String
   showMove (Move op dir face) = case op of
@@ -615,20 +630,6 @@ module Data.Cube (
               , Move Turn (oppositeDirection dir) face
               ]
     _ -> [move]
-
-  -- normalizeAlg :: Alg -> Alg
-  -- normalizeAlg (Alg moves) = Alg normalizedMoves
-  --   where
-  --     startOrientation = Orientation U F
-  --     normalizeRotations :: Orientation -> [Move] -> [Move]
-  --     normalizeRotations _ [] = []
-  --     normalizeRotations orientation (Move op dir face:tail) = case op of
-  --       Rotate -> normalizeRotations (doRotate orientation) tail
-  --         where doRotate = applyDirection dir (rotateOrientation face)
-  --       other -> Move op dir newFace : normalizeRotations orientation tail
-  --         where newFace = faceOn face orientation
-
-  --     normalizedMoves = normalizeRotations startOrientation (moves >>= normalizeMove)
 
   -- optimizeAlg :: Alg -> Alg
   -- optimizeAlg = doOptimize . normalizeAlg
