@@ -1,17 +1,16 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -fenable-rewrite-rules #-}
 module Data.Cube (
-  -- colors
-    Color(
-      White,
-      Yellow,
-      Red,
-      Orange,
-      Green,
-      Blue
-    ),
-    allColors,
-    printSwatch,
-    printSwatches,
+  -- groups
+    Group,
+    (|*|),
+    inverse,
+    identity,
+    compound,
+    conjugate,
+    commutator,
+    gconcat,
+    gconcat',
 
   -- faces
     Face(L, R, F, B, U, D),
@@ -26,20 +25,35 @@ module Data.Cube (
     faceOn,
     rotateOrientation,
 
+  -- permutations
+    Permutable,
+    permutationList,
+    makePermutation,
+
   -- cube
     Cube(Cube),
-    -- printCube,
-
-  -- turns
-  --  Turn(NullTurn, Forward, Reverse, Double, Multi),
-  --  readTurn,
-  --  showTurn,
-  --  applyTurn,
+    makeTurn,
+    makeRotation,
+    printCube,
 
   -- algs
-  --  sexy,
-  --  tperm,
-  --  sune
+    Alg,
+    makeAlg,
+    applyAlg,
+    readAlg,
+
+  -- algs
+    sexy,
+    tperm,
+    zperm,
+    hperm,
+    eperm,
+    aperm,
+    gperm,
+    vperm,
+    yperm,
+    uperm,
+    sune,
   ) where
 
   import Prelude hiding(id, (.))
@@ -48,8 +62,6 @@ module Data.Cube (
   -- import qualified Text.ParserCombinators.Parsec as Parsec
   import Text.ParserCombinators.Parsec
   import Data.Char (toUpper, toLower)
-  import qualified Data.Map as Map
-  import Data.Map (Map)
   import Data.Array.Unboxed
 
   {- UTILS -}
