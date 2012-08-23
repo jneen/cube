@@ -1,2 +1,7 @@
 # distribution files
 /dist
+
+# haskell objects
+*.hi
+*.o
+/Main

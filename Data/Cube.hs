@@ -18,7 +18,6 @@ module Data.Cube (
     oppositeFace,
     faceRing,
     rotateFace,
-    initColor,
 
   -- orientations
     Orientation(Orientation),
@@ -42,6 +41,7 @@ module Data.Cube (
     applyAlg,
     readAlg,
     normalizeAlg,
+    mirror,
 
   -- algs
     sexy,
@@ -73,25 +73,29 @@ module Data.Cube (
   {- GROUPS -}
   class Group a where
     infixl 7 |*|
+    -- | the group operation
     (|*|)    :: a -> a -> a
     inverse  :: a -> a
     identity :: a
 
+    -- | multiply an element by itself n times
     compound :: Int -> a -> a
     compound 0 _ = identity
     compound n x = x |*| compound (n-1) x
 
-    -- returns the conjugate (xyx')
+    -- | returns the conjugate (xyx\')
     conjugate :: a -> a -> a
     conjugate x y = x |*| y |*| inverse x
 
-    -- returns the commutator (xyx'y')
+    -- | returns the commutator (xyx\'y\')
     commutator :: a -> a -> a
     commutator x y = x |*| y |*| inverse x |*| inverse y
 
+    -- | multiply together a list of elements
     gconcat :: [a] -> a
     gconcat = foldl (|*|) identity
 
+    -- | multiply together a list of elements, strictly
     gconcat' :: [a] -> a
     gconcat' = foldl' (|*|) identity
 
@@ -130,7 +134,9 @@ module Data.Cube (
   printSwatch c = printSwatches [c]
 
   {- FACES -}
+  -- | a face on the cube
   data Face = L | R | F | B | U | D deriving(Show, Eq, Read, Ord)
+  -- | a list of all the available faces
   allFaces = [L, R, F, B, U, D]
 
   initColor :: Face -> Color
@@ -141,6 +147,7 @@ module Data.Cube (
   initColor R = Red
   initColor L = Orange
 
+  -- | the face on the other side of the cube
   oppositeFace :: Face -> Face
   oppositeFace L = R
   oppositeFace R = L
@@ -149,20 +156,33 @@ module Data.Cube (
   oppositeFace U = D
   oppositeFace D = U
 
+  -- | a clockwise list of faces forming a ring around the given face.
+  --
+  -- The rule is that, for any given face 'f', the sets
+  -- @[f]@, @'faceRing' f@, and @['oppositeFace' f]@ are disjoint,
+  -- and include all of the faces.
   faceRing :: Face -> [Face]
   faceRing U = [F, L, B, R]
   faceRing R = [F, U, B, D]
   faceRing F = [U, R, D, L]
-  faceRing f = reverse $ faceRing $ oppositeFace f
+  faceRing f = reverse $! faceRing $! oppositeFace f
 
   nextFaceRing :: Face -> Face -> [Face]
   nextFaceRing direction face = take 4 nextCycle
     where
       nextCycle = tail $ dropWhile (/= face) $ cycle (faceRing direction)
 
+
+  -- | @'rotateFace' rotatingFace face@ will return the face obtained by
+  -- rotating the cube clockwise about @rotatingFace@.  Note that
+  -- rotateFace is a noop if the rotating face is the same face or the
+  -- opposite of the given face.  Note also that
+  --
+  -- > rotateFace ('oppositeface' f)
+  --
+  -- is the inverse of @rotateFace f@.
   rotateFace :: Face -> Face -> Face
   rotateFace direction face
-    -- noop if the rotating face is the same face or the opposite
     | direction == face                 = face
     | direction == oppositeFace face    = face
     | otherwise                         = head $ nextFaceRing direction face
@@ -211,9 +231,17 @@ module Data.Cube (
   mapFacetFaces fn (Facet (c, f)) = Facet (mapCubieFaces fn c, fn f)
 
   {- ORIENTATIONS -}
+  -- | a representation of a particular orientation of the cube.
+  --
+  -- As a group, the identity has 'U' on the top and 'F' on the front,
+  -- and composition is as in the group of isometries of the cube.
   data Orientation = Orientation { topFace :: Face, frontFace :: Face }
     deriving(Show, Eq)
 
+  -- | returns the face in a particular orientation of the cube.
+  --
+  -- for example, @faceOn U orientation@ will return the face on top
+  -- when the cube is held in @orientation@.
   faceOn :: Face -> Orientation -> Face
   faceOn U o = topFace o
   faceOn D o = oppositeFace $ topFace o
@@ -222,6 +250,7 @@ module Data.Cube (
   faceOn F o = frontFace o
   faceOn B o = oppositeFace $ frontFace o
 
+  -- | returns the orientation obtained by rotating 
   rotateOrientation :: Face -> Orientation -> Orientation
   rotateOrientation face o@(Orientation t f) = Orientation (rotate t) (rotate f)
     where rotate = rotateFace $ faceOn (oppositeFace face) o
@@ -247,6 +276,7 @@ module Data.Cube (
     inverse = invertOrientation
 
   {- PERMUTATIONS -}
+  -- | A permutation of a given set, determined by the type.
   data Permutation a = Permutation (Array Int Int) deriving(Show, Eq)
   -- TODO: make Eq more general
 
@@ -280,9 +310,7 @@ module Data.Cube (
     permutationIndex = forceMaybe . flip elemIndex permutationList
 
     makePermutation :: (a -> a) -> Permutation a
-    makePermutation f = Permutation $ arrayFromList $ permutedList
-      where
-        permutedList = map (permutationIndex . f) permutationList
+    makePermutation f = Permutation $ fmap (permutationIndex . f) permutationArray
 
   instance (Eq a, Permutable a) => Group (Permutation a) where
     identity = makePermutation id
