@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fenable-rewrite-rules #-}
-module Data.Cube (
+module Data.RubiksCube (
   -- groups
     Group,
     (|*|),
